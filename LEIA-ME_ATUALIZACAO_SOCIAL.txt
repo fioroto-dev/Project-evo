@@ -1,0 +1,67 @@
+PROJETO EVOLUÇÃO — ATUALIZAÇÃO AMIGOS E GUILDAS
+=================================================
+
+O QUE FOI ADICIONADO
+• Aba “Amigos e Guildas” no menu do site.
+• Cada conta recebe um código exclusivo EVO-<UID Firebase> para compartilhar.
+• Enviar, aceitar e recusar pedidos de amizade; ver e remover amigos.
+• Criar guildas com nome, sigla, descrição, líder e até 20 membros.
+• Líder convida amigos; convidado aceita ou recusa; membros saem.
+• Líder pode encerrar a guilda.
+• Regras Firestore obrigatórias: usuários precisam aceitar convites.
+• Os perfis sociais compartilham apenas nickname e código de jogador.
+  E-mail, senha, foto e histórico de missões não são expostos no social.
+• O sistema antigo de XP, ranks, missões, Ren e login permanece no site.
+
+IMPORTANTE: SUA CONFIGURAÇÃO FIREBASE JÁ ESTÁ PRONTA!
+--------------------------------------------------
+VOCÊ DEVE PRESERVAR SEU ARQUIVO:
+  public/firebase-config.js
+Ele contém os dados do SEU projeto e NÃO precisa ser substituído.
+Use o ZIP "Projeto_Evolucao_Atualizacao_Amigos_Guildas.zip" para
+copiar SOMENTE estes arquivos sobre a pasta do seu projeto atual:
+
+  public/index.html
+  public/firebase-social.js                  (arquivo novo)
+  firestore.rules
+
+NÃO APAGUE e NÃO TROQUE public/firebase-config.js nem
+public/firebase-auth-sync.js. Não remova firebase.json.
+
+COMO INSTALAR / PUBLICAR
+------------------------
+1. Faça uma cópia de segurança da pasta original e do progresso JSON.
+2. Extraia o ZIP da atualização em uma pasta temporária.
+3. Copie os três arquivos acima para a pasta original:
+   Projeto_Evolucao_Firebase_Pronto\
+     public\index.html
+     public\firebase-social.js
+     firestore.rules
+4. No VS Code, abra o terminal na pasta que contém firebase.json.
+5. Execute (PowerShell):
+   firebase.cmd deploy --project project-evo-a8d9a --only "hosting,firestore:rules"
+6. Abra ou atualize https://project-evo-a8d9a.web.app
+7. Faça login com duas contas de teste e peça para AMBAS abrirem a
+   nova página (isso cria o perfil público básico de cada jogador).
+8. Na aba Amigos e Guildas, copie o código EVO-... de uma conta e
+   cole na outra. Envie pedido de amizade. Aceite na conta de destino.
+9. Crie uma guilda, convide seu amigo e aceite o convite na outra conta.
+
+ATENÇÃO: É NECESSÁRIO REPUBLICAR AS REGRAS DO FIRESTORE.
+Usar só --only hosting deixará amizades/guildas sem permissão.
+O deploy de firestore:rules altera as regras do banco inteiro. Se houver
+outros sites no mesmo Firestore, revise o arquivo antes de publicar.
+
+OBSERVAÇÕES
+-----------
+• Nenhuma conta antiga é apagada. As regras de progresso foram mantidas.
+• Já que o site usa Firestore, o sistema social precisa de internet.
+• O código é um identificador de conta, não uma senha; compartilhe
+  apenas com pessoas que você conhece.
+• Nesta primeira versão, é possível participar de mais de uma guilda.
+• O modelo não tem chat, lista pública de usuários ou busca por e-mail.
+• Convites pendentes para guildas encerradas podem ser descartados.
+• Firestore tem limites de uso e pode cobrar além da franquia gratuita.
+• Não há testes com seu Firebase real; verifique em duas contas após deploy.
+• Se o deploy de regras indicar erro, não altere as regras no escuro;
+  guarde o erro do terminal para corrigir a sintaxe com segurança.

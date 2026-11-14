@@ -1,0 +1,134 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function logado() { return request.auth != null; }
+    function eh(uid) { return logado() && request.auth.uid == uid; }
+    function outroMembro(membros) {
+      return membros[0] == request.auth.uid ? membros[1] : membros[0];
+    }
+    function perfilExiste(uid) {
+      return exists(/databases/$(database)/documents/publicProfiles/$(uid));
+    }
+    function conviteRecebido(gid) {
+      return exists(/databases/$(database)/documents/guildInvites/$(request.auth.uid)/incoming/$(gid));
+    }
+    function amigos(a, b) {
+      return exists(/databases/$(database)/documents/friendships/$(a + '_' + b))
+          || exists(/databases/$(database)/documents/friendships/$(b + '_' + a));
+    }
+
+    // Progresso antigo: mantém as regras existentes, exclusivamente por UID.
+    match /users/{userId}/progress/{docId} {
+      allow read: if eh(userId) && docId == 'current';
+      allow create, update: if eh(userId) && docId == 'current'
+        && request.resource.data.keys().hasOnly(['estado', 'atualizadoEmCliente'])
+        && request.resource.data.estado is map
+        && request.resource.data.atualizadoEmCliente is int;
+      allow delete: if false;
+    }
+
+    // Perfil social mínimo: NUNCA armazena e-mail nem dados do progresso.
+    // Somente leitura por UID exato; proíbe enumerar perfis inteiros.
+    match /publicProfiles/{uid} {
+      allow get: if logado();
+      allow list: if false;
+      allow create, update: if eh(uid)
+        && request.resource.data.keys().hasOnly(['nickname'])
+        && request.resource.data.nickname is string
+        && request.resource.data.nickname.size() >= 1
+        && request.resource.data.nickname.size() <= 20;
+      allow delete: if eh(uid);
+    }
+
+    match /friendRequests/{destinatario}/incoming/{remetente} {
+      allow get, list: if eh(destinatario) || eh(remetente);
+      allow create: if eh(remetente) && destinatario != remetente
+        && perfilExiste(destinatario)
+        && request.resource.data.keys().hasOnly(['fromUid','toUid','createdAt'])
+        && request.resource.data.keys().hasAll(['fromUid','toUid','createdAt'])
+        && request.resource.data.fromUid == remetente
+        && request.resource.data.toUid == destinatario
+        && request.resource.data.createdAt is int;
+      allow update: if false;
+      allow delete: if eh(destinatario) || eh(remetente);
+    }
+
+    // Uma amizade só pode ser criada por alguém que recebeu um pedido real.
+    match /friendships/{parId} {
+      allow get, list: if logado() && request.auth.uid in resource.data.members;
+      allow create: if logado()
+        && request.resource.data.keys().hasOnly(['members','createdAt'])
+        && request.resource.data.keys().hasAll(['members','createdAt'])
+        && request.resource.data.members is list
+        && request.resource.data.members.size() == 2
+        && request.resource.data.members[0] is string
+        && request.resource.data.members[1] is string
+        && request.resource.data.members[0] != request.resource.data.members[1]
+        && parId == request.resource.data.members[0] + '_' + request.resource.data.members[1]
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.createdAt is int
+        && exists(/databases/$(database)/documents/friendRequests/$(request.auth.uid)/incoming/$(outroMembro(request.resource.data.members)));
+      allow update: if false;
+      allow delete: if logado() && request.auth.uid in resource.data.members;
+    }
+
+    // Guilda: apenas líder cria/exclui. Convites necessários para entrada.
+    match /guilds/{guildId} {
+      allow get: if logado() && (conviteRecebido(guildId) || request.auth.uid in resource.data.memberUids);
+      allow list: if logado() && request.auth.uid in resource.data.memberUids;
+      allow create: if logado()
+        && request.resource.data.keys().hasOnly(['name','tag','description','leaderUid','memberUids','createdAt'])
+        && request.resource.data.keys().hasAll(['name','tag','description','leaderUid','memberUids','createdAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 3 && request.resource.data.name.size() <= 36
+        && request.resource.data.tag is string
+        && request.resource.data.tag.matches('^[A-Z0-9]{2,6}$')
+        && request.resource.data.description is string && request.resource.data.description.size() <= 180
+        && request.resource.data.leaderUid == request.auth.uid
+        && request.resource.data.memberUids == [request.auth.uid]
+        && request.resource.data.createdAt is int;
+      allow update: if logado()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids'])
+        && request.resource.data.memberUids is list
+        && (
+          // Entrar: convite existente e apenas acrescentar a si mesmo.
+          (conviteRecebido(guildId)
+            && !(request.auth.uid in resource.data.memberUids)
+            && request.auth.uid in request.resource.data.memberUids
+            && request.resource.data.memberUids.hasAll(resource.data.memberUids)
+            && request.resource.data.memberUids.size() == resource.data.memberUids.size()+1
+            && request.resource.data.memberUids.size() <= 20)
+          ||
+          // Sair: membro comum remove somente a si mesmo.
+          (request.auth.uid in resource.data.memberUids
+            && request.auth.uid != resource.data.leaderUid
+            && !(request.auth.uid in request.resource.data.memberUids)
+            && resource.data.memberUids.hasAll(request.resource.data.memberUids)
+            && request.resource.data.memberUids.size() == resource.data.memberUids.size()-1)
+        );
+      allow delete: if logado() && resource.data.leaderUid == request.auth.uid;
+    }
+
+    // Líder só pode convidar um AMIGO. Destinatário aceita ou recusa.
+    match /guildInvites/{destinatario}/incoming/{guildId} {
+      allow get, list: if eh(destinatario)
+        || (logado() && resource.data.fromUid == request.auth.uid);
+      allow create: if logado()
+        && destinatario != request.auth.uid
+        && perfilExiste(destinatario)
+        && exists(/databases/$(database)/documents/guilds/$(guildId))
+        && get(/databases/$(database)/documents/guilds/$(guildId)).data.leaderUid == request.auth.uid
+        && amigos(request.auth.uid, destinatario)
+        && !(destinatario in get(/databases/$(database)/documents/guilds/$(guildId)).data.memberUids)
+        && request.resource.data.keys().hasOnly(['guildId','toUid','fromUid','createdAt'])
+        && request.resource.data.keys().hasAll(['guildId','toUid','fromUid','createdAt'])
+        && request.resource.data.guildId == guildId
+        && request.resource.data.toUid == destinatario
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.createdAt is int;
+      allow update: if false;
+      allow delete: if eh(destinatario)
+        || (logado() && resource.data.fromUid == request.auth.uid);
+    }
+  }
+}
